@@ -3,6 +3,7 @@ package intervals
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -192,30 +193,41 @@ func TestClient_Delete(t *testing.T) {
 func TestClient_ErrorResponse(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":"secret internal details"}`))
-	}))
-	defer server.Close()
-
-	c := &Client{
-		baseURL:    server.URL,
-		apiKey:     "test-key",
-		athleteID:  "i123",
-		httpClient: server.Client(),
+	tests := []struct {
+		name        string
+		status      int
+		body        string
+		wantInError bool
+	}{
+		{"client error includes validation detail", http.StatusUnprocessableEntity, `{"error":"Invalid start date"}`, true},
+		{"server error hides body", http.StatusInternalServerError, `{"error":"secret internal details"}`, false},
 	}
 
-	_, err := c.Get(context.Background(), "/api/v1/missing", nil)
-	if err == nil {
-		t.Fatal("expected error for 404 response")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	if !strings.Contains(err.Error(), "status 404") {
-		t.Fatalf("expected error to contain status 404, got: %v", err)
-	}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
 
-	if strings.Contains(err.Error(), "secret internal details") {
-		t.Fatal("error message should not contain API response body content")
+			c := &Client{baseURL: server.URL, apiKey: "test-key", athleteID: "i123", httpClient: server.Client()}
+
+			_, err := c.Get(context.Background(), "/api/v1/missing", nil)
+			if err == nil {
+				t.Fatal("expected error for error response")
+			}
+
+			if !strings.Contains(err.Error(), fmt.Sprintf("status %d", tt.status)) {
+				t.Fatalf("expected error to contain status %d, got: %v", tt.status, err)
+			}
+
+			if got := strings.Contains(err.Error(), tt.body); got != tt.wantInError {
+				t.Fatalf("expected body in error = %v, got error: %v", tt.wantInError, err)
+			}
+		})
 	}
 }
 

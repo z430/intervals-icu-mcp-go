@@ -4,6 +4,8 @@ package tools
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,3 +37,35 @@ func validateDateFormat(s string) error {
 
 // ToolRegistration is a function that registers an MCP tool on the given server.
 type ToolRegistration func(server *mcp.Server)
+
+const localDateTimeLayout = "2006-01-02T15:04:05"
+
+var errInvalidCategory = errors.New("invalid category")
+
+var eventCategories = []string{ //nolint:gochecknoglobals // static enum of API-accepted categories.
+	"WORKOUT", "RACE_A", "RACE_B", "RACE_C", "NOTE", "PLAN", "HOLIDAY", "SICK",
+	"INJURED", "SET_EFTP", "FITNESS_DAYS", "SEASON_START", "TARGET", "SET_FITNESS",
+}
+
+// normalizeLocalDateTime accepts yyyy-MM-dd, yyyy-MM-ddTHH:mm or yyyy-MM-ddTHH:mm:ss and returns
+// the yyyy-MM-ddTHH:mm:ss form the Intervals.icu API requires. A bare date means midnight.
+func normalizeLocalDateTime(s string) (string, error) {
+	for _, layout := range []string{time.DateOnly, "2006-01-02T15:04", localDateTimeLayout} {
+		parsed, err := time.Parse(layout, s)
+		if err == nil {
+			return parsed.Format(localDateTimeLayout), nil
+		}
+	}
+
+	return "", fmt.Errorf("invalid date %q, expected yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss", s)
+}
+
+// normalizeEventCategory upper-cases and validates an event category against the API enum.
+func normalizeEventCategory(s string) (string, error) {
+	category := strings.ToUpper(strings.TrimSpace(s))
+	if !slices.Contains(eventCategories, category) {
+		return "", fmt.Errorf("%w %q, must be one of: %s", errInvalidCategory, s, strings.Join(eventCategories, ", "))
+	}
+
+	return category, nil
+}

@@ -8,13 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 const (
-	baseURL            = "https://intervals.icu"
-	httpClientTimeout  = 30 * time.Second
-	maxResponseSize = 10 << 20 // 10 MB
+	baseURL           = "https://intervals.icu"
+	httpClientTimeout = 30 * time.Second
+	maxResponseSize   = 10 << 20 // 10 MB
 )
 
 var (
@@ -122,7 +123,7 @@ func (c *Client) doRequest(
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, errors.Join(fmt.Errorf("%w: status %d", errRequestFailed, resp.StatusCode), closeErr)
+		return nil, errors.Join(fmt.Errorf("%w: status %d%s", errRequestFailed, resp.StatusCode, errorDetail(resp.StatusCode, respBody)), closeErr)
 	}
 
 	if closeErr != nil {
@@ -130,4 +131,21 @@ func (c *Client) doRequest(
 	}
 
 	return respBody, nil
+}
+
+const maxErrorDetail = 300
+
+// errorDetail returns a short excerpt of an API error body so callers can fix bad requests.
+// Only 4xx (client/validation) responses are included; 5xx bodies may hold internal details.
+func errorDetail(status int, body []byte) string {
+	detail := strings.TrimSpace(string(body))
+	if detail == "" || status >= http.StatusInternalServerError {
+		return ""
+	}
+
+	if len(detail) > maxErrorDetail {
+		detail = detail[:maxErrorDetail] + "..."
+	}
+
+	return ": " + detail
 }

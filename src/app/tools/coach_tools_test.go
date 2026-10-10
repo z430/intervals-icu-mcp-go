@@ -155,3 +155,71 @@ func TestCoachTools_Validation(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeLocalDateTime(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"2024-06-01":          "2024-06-01T00:00:00",
+		"2024-06-01T07:30":    "2024-06-01T07:30:00",
+		"2024-06-01T07:30:15": "2024-06-01T07:30:15",
+	}
+
+	for in, want := range tests {
+		got, err := normalizeLocalDateTime(in)
+		if err != nil || got != want {
+			t.Errorf("normalizeLocalDateTime(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+
+	if _, err := normalizeLocalDateTime("06/01/2024"); err == nil {
+		t.Error("expected error for unsupported date format")
+	}
+}
+
+func TestEventCategoryAndPayload(t *testing.T) {
+	t.Parallel()
+
+	if got, err := normalizeEventCategory(" race_a "); err != nil || got != "RACE_A" {
+		t.Errorf("expected RACE_A, got %q, %v", got, err)
+	}
+
+	if _, err := normalizeEventCategory("RACE"); err == nil {
+		t.Error("expected RACE to be rejected")
+	}
+
+	var body map[string]any
+
+	result := callToolWithRegistration(t, NewCreateEventTool, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		_, _ = w.Write([]byte(testResponse))
+	}, "create_event", map[string]any{
+		"name": "Ride", "start_date_local": "2030-01-01", "category": "workout", "type": "Ride",
+		"moving_time": 3600, "training_load": 49.6,
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got: %+v", result.Content)
+	}
+
+	want := map[string]any{
+		"name": "Ride", "start_date_local": "2030-01-01T00:00:00", "category": "WORKOUT", "type": "Ride",
+		"moving_time": float64(3600), "icu_training_load": float64(50),
+	}
+	if !reflect.DeepEqual(body, want) {
+		t.Errorf("expected body %v, got: %v", want, body)
+	}
+
+	for _, args := range []map[string]any{
+		{"name": "Race", "start_date_local": "2030-01-01", "category": "RACE_A"},
+		{"name": "Race", "start_date_local": "2030-01-01", "category": "RACE", "type": "Run"},
+	} {
+		res := callToolWithRegistration(t, NewCreateEventTool, func(_ http.ResponseWriter, _ *http.Request) {
+			t.Error("API should not be called for invalid events")
+		}, "create_event", args)
+		if !res.IsError {
+			t.Errorf("expected validation error for %v", args)
+		}
+	}
+}

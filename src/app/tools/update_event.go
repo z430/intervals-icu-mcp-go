@@ -16,23 +16,12 @@ type updateEventArgs struct {
 	EventID        string   `json:"event_id"                   jsonschema:"the event ID to update"`
 	Name           string   `json:"name,omitempty"             jsonschema:"event name"`
 	Description    string   `json:"description,omitempty"      jsonschema:"event description or notes"`
-	StartDateLocal string   `json:"start_date_local,omitempty" jsonschema:"start date in yyyy-MM-dd format"`
-	Category       string   `json:"category,omitempty"         jsonschema:"event category (WORKOUT, NOTE, RACE)"`
+	StartDateLocal string   `json:"start_date_local,omitempty" jsonschema:"start date as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ss (local time); a bare date means midnight"`
+	Category       string   `json:"category,omitempty"         jsonschema:"event category: WORKOUT, RACE_A, RACE_B, RACE_C, NOTE, PLAN, HOLIDAY, SICK, INJURED, SET_EFTP, FITNESS_DAYS, SEASON_START, TARGET or SET_FITNESS"`
 	Type           string   `json:"type,omitempty"             jsonschema:"sport type (e.g. Ride or Run or Swim)"`
 	MovingTime     *float64 `json:"moving_time,omitempty"      jsonschema:"planned moving time in seconds"`
 	Distance       *float64 `json:"distance,omitempty"         jsonschema:"planned distance in meters"`
 	TrainingLoad   *float64 `json:"training_load,omitempty"    jsonschema:"planned training load (TSS or similar)"`
-}
-
-type updateEventPayload struct {
-	Name           string   `json:"name,omitempty"`
-	Description    string   `json:"description,omitempty"`
-	StartDateLocal string   `json:"start_date_local,omitempty"`
-	Category       string   `json:"category,omitempty"`
-	Type           string   `json:"type,omitempty"`
-	MovingTime     *float64 `json:"moving_time,omitempty"`
-	Distance       *float64 `json:"distance,omitempty"`
-	TrainingLoad   *float64 `json:"training_load,omitempty"`
 }
 
 // NewUpdateEventTool returns a ToolRegistration that registers the update_event tool on an MCP server.
@@ -48,22 +37,31 @@ func NewUpdateEventTool(apiClient *intervals.Client) ToolRegistration {
 					return nil, nil, errMissingEventID
 				}
 
+				payload := eventPayload{
+					Name:         args.Name,
+					Description:  args.Description,
+					Type:         args.Type,
+					MovingTime:   roundedInt(args.MovingTime),
+					Distance:     args.Distance,
+					TrainingLoad: roundedInt(args.TrainingLoad),
+				}
+
 				if args.StartDateLocal != "" {
-					err := validateDateFormat(args.StartDateLocal)
+					startDate, err := normalizeLocalDateTime(args.StartDateLocal)
 					if err != nil {
 						return nil, nil, err
 					}
+
+					payload.StartDate = startDate
 				}
 
-				payload := updateEventPayload{
-					Name:           args.Name,
-					Description:    args.Description,
-					StartDateLocal: args.StartDateLocal,
-					Category:       args.Category,
-					Type:           args.Type,
-					MovingTime:     args.MovingTime,
-					Distance:       args.Distance,
-					TrainingLoad:   args.TrainingLoad,
+				if args.Category != "" {
+					category, err := normalizeEventCategory(args.Category)
+					if err != nil {
+						return nil, nil, err
+					}
+
+					payload.Category = category
 				}
 
 				payloadBytes, err := json.Marshal(payload)

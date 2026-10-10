@@ -19,6 +19,9 @@ var (
 	errMissingName       = errors.New("name is required")
 	errMissingStartDate  = errors.New("start_date_local is required")
 	errMissingCategory   = errors.New("category is required")
+	errMissingTypes      = errors.New("types is required")
+	errMissingStart      = errors.New("start is required")
+	errMissingEnd        = errors.New("end is required")
 )
 
 func validateDateFormat(s string) error {
